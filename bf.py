@@ -104,6 +104,7 @@ def run_section(program, conn, disconnect, print_lock, name, shared):
     dp = 0
     ip = 0
     line_buffer = []
+    input_buffer = []
 
     def flush_buffer():
         """Flush the line buffer to stdout under the print lock."""
@@ -145,40 +146,55 @@ def run_section(program, conn, disconnect, print_lock, name, shared):
         elif cmd == ',':
             flush_buffer()
             if shared['raw']:
-                # Raw mode: read one byte directly, handle echo manually
-                byte = os.read(sys.stdin.fileno(), 1)
-                if not byte:
-                    disconnect.set()
-                    return
-                b = byte[0]
-
-                # Ctrl+C: exit cleanly
-                if b == 3:
-                    disconnect.set()
-                    return
-
-                # Enter key: raw mode sends \r (13), BF expects \n (10)
-                if b == 13:
-                    tape[dp] = 10  # Convert to \n for the BF program
-                    with print_lock:
-                        sys.stdout.write('\r\n')
-                        sys.stdout.flush()
-                        shared['input'] = ''
-                # Backspace (127) or Delete (8)
-                elif b == 127 or b == 8:
-                    with print_lock:
-                        if shared['input']:
-                            shared['input'] = shared['input'][:-1]
-                            sys.stdout.write('\b \b')
-                            sys.stdout.flush()
-                    continue
+                # Raw mode: buffer a full line before feeding characters to the BF program
+                # This ensures backspace works correctly — characters are only sent after Enter
+                if input_buffer:
+                    tape[dp] = input_buffer.pop(0)
                 else:
-                    tape[dp] = b
-                    ch = chr(b)
-                    with print_lock:
-                        shared['input'] += ch
-                        sys.stdout.write(ch)
-                        sys.stdout.flush()
+                    # Read keystrokes until Enter, building the input buffer
+                    while not disconnect.is_set():
+                        byte = os.read(sys.stdin.fileno(), 1)
+                        if not byte:
+                            disconnect.set()
+                            return
+                        b = byte[0]
+
+                        # Ctrl+C: exit cleanly
+                        if b == 3:
+                            disconnect.set()
+                            return
+
+                        # Enter key: raw mode sends \r (13), BF expects \n (10)
+                        if b == 13:
+                            input_buffer.append(10)
+                            with print_lock:
+                                sys.stdout.write('\r\n')
+                                sys.stdout.flush()
+                                shared['input'] = ''
+                            break
+
+                        # Backspace (127) or Delete (8): remove from buffer, not sent
+                        if b == 127 or b == 8:
+                            with print_lock:
+                                if shared['input']:
+                                    shared['input'] = shared['input'][:-1]
+                                    sys.stdout.write('\b \b')
+                                    sys.stdout.flush()
+                            continue
+
+                        # Regular character: add to buffer and echo
+                        input_buffer.append(b)
+                        ch = chr(b)
+                        with print_lock:
+                            shared['input'] += ch
+                            sys.stdout.write(ch)
+                            sys.stdout.flush()
+
+                    # If disconnect happened before any input, exit
+                    if not input_buffer:
+                        disconnect.set()
+                        return
+                    tape[dp] = input_buffer.pop(0)
             else:
                 # Normal mode: standard stdin read
                 ch = sys.stdin.read(1)
