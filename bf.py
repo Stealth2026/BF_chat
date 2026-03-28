@@ -175,6 +175,8 @@ def run_section(program, conn, disconnect, print_lock, name, shared):
 
                         # Backspace (127) or Delete (8): remove from buffer, not sent
                         if b == 127 or b == 8:
+                            if input_buffer:
+                                input_buffer.pop()
                             with print_lock:
                                 if shared['input']:
                                     shared['input'] = shared['input'][:-1]
