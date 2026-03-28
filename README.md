@@ -2,6 +2,8 @@
 
 A 1:1 chat application where **the entire application logic is written in Brainfuck** — an esoteric programming language with only 8 commands. Two people open terminals, run the same program, and send messages back and forth freely — no waiting for a reply before sending the next message.
 
+![Demo](demo.gif)
+
 ## The Problem
 
 Brainfuck has no networking and no concurrency. It can read one byte from stdin (`,`) and write one byte to stdout (`.`). That's it. Building a chat application in Brainfuck is, by the language's standard definition, impossible.
